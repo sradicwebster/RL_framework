@@ -1,14 +1,13 @@
 from tqdm import tqdm
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import gym
-from networks import *
-from buffer import *
-from updates import *
+from RL_framework.networks import SequentialNetwork, ValueFunction
+from RL_framework.buffer import ReplayMemory, ProcessMinibatch
 import wandb
 
 wandb.init(project='framework')
-wandb.config = wandb.config
 
 # Environment details
 # ~~~~~~~~~~~~~~~~~~~
@@ -19,45 +18,44 @@ n_actions = env.action_space.n
 # General details
 # ~~~~~~~~~~~~~~~
 wandb.config.algorithm = 'DQN'
-gamma = 0.99
-sample_collection = 1  # AC=1, DQN=1, PPO=32
-buffer_size = 5000     # AC=1, DQN=1000, PPO=32
-minibatch_size = 32    # AC=1, DQN=32, PPO=32
+num_episodes = 5
 
-target_update = 500 # steps
+gamma = 0.99
+params = {'sample_collection': 1,
+          'buffer_size': 5000,
+          'minibatch_size': 32,
+          'target_update': 1000
+          }
 
 wandb.config.gamma = gamma
-wandb.config.sample_collection = sample_collection
-wandb.config.buffer_size = buffer_size
-wandb.config.minibatch_size = minibatch_size
-
-num_episodes = 1000
+wandb.config.update(params)
 
 # Networks details
 # ~~~~~~~~~~~~~~~~
 network_layers = {'Qnet_layers': [nn.Linear(obs_size, 64),
-                           nn.ReLU(),
-                           nn.Linear(64, 128),
-                           nn.ReLU(),
-                           nn.Linear(128, n_actions)]
-                 }
-wandb.config.update(network_layers)
+                                  nn.ReLU(),
+                                  nn.Linear(64, 128),
+                                  nn.ReLU(),
+                                  nn.Linear(128, n_actions)],
+                  'dueling_nodes': [obs_size, 64, 128, n_actions]
+                  }
 
-learning_rates = {'Qnet_lr': 5e-4,}
+learning_rates = {'Qnet_lr': 5e-4}
 wandb.config.update(learning_rates)
 
 epsilon = {'eps_start': 1,
-          'eps_end': 0.1,
-          'eps_decay': 250 ,
-          }
+           'eps_end': 0.1,
+           'eps_decay': 250,
+           }
 wandb.config.update(epsilon)
 
 # Initialisation
 # ~~~~~~~~~~~~~~
 net = SequentialNetwork(network_layers['Qnet_layers'])
+wandb.config.netork = net
 Qnet = ValueFunction(net, optim.Adam, learning_rates['Qnet_lr'], torch.nn.SmoothL1Loss(), epsilon, target_net=True)
 
-buffer = ReplayMemory(buffer_size)
+buffer = ReplayMemory(params['buffer_size'])
 
 # Get training
 # ~~~~~~~~~~~~
@@ -68,7 +66,7 @@ for episode in tqdm(range(num_episodes)):
     episode_reward = 0
     step = 0
 
-    state = env.reset() 
+    state = env.reset()
 
     terminal = False
     while terminal is False:
@@ -79,23 +77,21 @@ for episode in tqdm(range(num_episodes)):
         step += 1
         total_step += 1
 
-        buffer.add(state, action, reward, next_state, terminal, step)
+        buffer.add(state, action, reward, next_state, terminal, step, None)
 
         state = next_state
         episode_reward += reward
 
-        if (step % sample_collection == 0 or terminal == True) and len(buffer) >= minibatch_size:           
+        if (step % params['sample_collection'] == 0 or terminal is True) and len(buffer) >= params['minibatch_size']:
+            minibatch = buffer.random_sample(params['minibatch_size'])
+            transitions = ProcessMinibatch(minibatch, gamma)
 
-            minibatch = buffer.sample(minibatch_size) # may need to change to random_sample
-            transitions = ProcessMinibatch(minibatch)
-            
-            target = transitions.qlearning_target(Qnet.target_net, gamma) 
+            target = transitions.qlearning_target(Qnet.target_net)
             current_v = transitions.current_value(Qnet.net)
             Qnet.optimise(target, current_v)
-            
-        if total_step % target_update == 0:
+
+        if total_step % params['target_update'] == 0:
             Qnet.update_target()
-            
 
     wandb.log({"reward": episode_reward})
     episode_rewards.append(episode_reward)

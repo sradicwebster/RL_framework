@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import wandb
 import random
@@ -11,7 +12,32 @@ class SequentialNetwork(nn.Module):
         self.layers = nn.Sequential(*layers)
         
     def forward(self, x): return self.layers(x)
-    
+
+
+class DuelingNetwork(nn.Module):
+    def __init__(self, nodes):  # nodes = [obs_size, 64, 128, n_actions]
+        super(DuelingNetwork, self).__init__()
+
+        self.fc1 = nn.Linear(nodes[0], nodes[1])
+        self.fc_value = nn.Linear(nodes[1], nodes[2])
+        self.fc_adv = nn.Linear(nodes[1], nodes[2])
+
+        self.value = nn.Linear(nodes[2], 1)
+        self.adv = nn.Linear(nodes[2], nodes[-1])
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        value = F.relu(self.fc_value(x))
+        adv = F.relu(self.fc_adv(x))
+
+        value = self.value(value)
+        adv = self.adv(adv)
+
+        advAverage = torch.mean(adv, dim=0, keepdim=True)
+        Q = value + adv - advAverage
+
+        return Q
+
     
 class PolicyFunction(nn.Module):
     def __init__(self, net, opt, learning_rate):
@@ -23,7 +49,7 @@ class PolicyFunction(nn.Module):
         probs = self.net(torch.from_numpy(state).float())
         dist = torch.distributions.Categorical(probs)
         action = dist.sample().item()
-        return action
+        return action, probs[action].log().reshape(1)
     
     def get_policy(self, state):
         return self.net(torch.from_numpy(state).float())
@@ -32,9 +58,14 @@ class PolicyFunction(nn.Module):
         policy = self.net(torch.from_numpy(state).float())
         return torch.log(policy[action]) 
     
-    def optimise(self, loss):
+    def optimise(self, loss, grad_clamp=False):
         self.optimiser.zero_grad()
         loss.backward(retain_graph=True)
+
+        if grad_clamp is True:  # check if works
+            for param in self.net.parameters():
+                param.grad.data.clamp_(-1, 1)
+
         self.optimiser.step()
   
    
