@@ -4,13 +4,14 @@ import torch.nn.functional as F
 import numpy as np
 import wandb
 import random
+import copy
 
 
 class SequentialNetwork(nn.Module):
     def __init__(self, layers):
-        super(SequentialNetwork, self).__init__() 
+        super(SequentialNetwork, self).__init__()
         self.layers = nn.Sequential(*layers)
-        
+
     def forward(self, x): return self.layers(x)
 
 
@@ -38,72 +39,81 @@ class DuelingNetwork(nn.Module):
 
         return Q
 
-    
-class PolicyFunction(nn.Module):
-    def __init__(self, net, opt, learning_rate):
-        super(PolicyFunction, self).__init__() 
+
+class Qnet_continuous_actions(nn.Module):
+    #  add layer norm??
+    def __init__(self, obs_size, action_n):
+        super().__init__()
+        self.fc1 = nn.Linear(obs_size, 32)
+        self.fc2 = nn.Linear(32 + action_n, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, state, action):
+        x1 = F.relu(self.fc1(state))
+        x = torch.cat((x1, action), dim=1)
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
+class CommonFunctions:
+    def __init__(self, net, optimiser, target_net, tau):
         self.net = net
-        self.optimiser = opt(net.parameters(), lr=learning_rate)
-        
-    def softmax_action(self, state):
-        probs = self.net(torch.from_numpy(state).float())
-        dist = torch.distributions.Categorical(probs)
-        action = dist.sample().item()
-        return action, probs[action].log().reshape(1)
-    
-    def get_policy(self, state):
-        return self.net(torch.from_numpy(state).float())
-    
-    def log_prob(self, state, action):
-        policy = self.net(torch.from_numpy(state).float())
-        return torch.log(policy[action]) 
-    
+        self.optimiser = optimiser
+        if target_net is True:
+            self.target_net = copy.deepcopy(net)
+        self.tau = tau
+
     def optimise(self, loss, grad_clamp=False):
         self.optimiser.zero_grad()
         loss.backward(retain_graph=True)
 
-        if grad_clamp is True:  # check if works
+        if grad_clamp is True:
             for param in self.net.parameters():
                 param.grad.data.clamp_(-1, 1)
 
         self.optimiser.step()
-  
-   
-class ValueFunction(nn.Module):
-    def __init__(self, net, opt, learning_rate, loss_function, epsilon=None, target_net=False):
-        super(ValueFunction, self).__init__() 
-        self.net = net
-        self.optimiser = opt(net.parameters(), lr=learning_rate)
-        self.loss_function = loss_function
+
+    def hard_target_update(self):
+        for target_param, param in zip(self.target_net.parameters(), self.net.parameters()):
+            target_param.data.copy_(param.data)
+
+    def soft_target_update(self):
+        for target_param, param in zip(self.target_net.parameters(), self.net.parameters()):
+            target_param.data.copy_(target_param.data * (1 - self.tau) + param.data * self.tau)
+
+
+class PolicyFunction(CommonFunctions):
+    def __init__(self, net, optimiser, target_net=False, tau=None):
+        super().__init__(net, optimiser, target_net, tau)
+
+    def softmax_action(self, state):
+        probs = self.net(torch.from_numpy(state).float().reshape(1, -1))
+        dist = torch.distributions.Categorical(probs)
+        action = dist.sample().item()
+        return action, probs.squeeze()[action].log()
+
+    def get_policy(self, state):
+        return self.net(torch.from_numpy(state).float())
+
+    def log_prob(self, state, action):
+        policy = self.net(torch.from_numpy(state).float())
+        return torch.log(policy[action])
+
+
+class ValueFunction(CommonFunctions):
+    def __init__(self, net, optimiser, target_net=False, tau=None, epsilon=None):
+        super().__init__(net, optimiser, target_net, tau)
         self.epsilon = epsilon
-        if target_net is True:
-            self.target_net = net
-    
-    def optimise(self, target, current_v, grad_clamp=False):
-        loss = self.loss_function(target, current_v)
-        wandb.log({"value_loss": loss}, commit=False)
-        
-        self.optimiser.zero_grad()
-        loss.backward()
-        
-        if grad_clamp is True:  # check if works
-            for param in self.net.parameters():
-                param.grad.data.clamp_(-1, 1)
-                
-        self.optimiser.step()
-        return 
-        
+
     def epsilon_greedy_action(self, state, episode):
-        
+
         epsilon = self.epsilon['eps_end'] + (self.epsilon['eps_start'] - self.epsilon['eps_end']) \
                   * np.exp(-episode / self.epsilon['eps_decay'])
         wandb.log({"epsilon": epsilon}, commit=False)
-        
+
         if np.random.rand() < epsilon:
             return random.randrange(self.net.layers[-1].out_features)
         else:
             with torch.no_grad():
                 return torch.argmax(self.net(torch.from_numpy(state).float())).item()
-            
-    def update_target(self):
-        self.target_net.load_state_dict(self.net.state_dict())
