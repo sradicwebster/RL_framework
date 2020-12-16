@@ -1,3 +1,3 @@
 # Framework for DRL algorithms
 
-![sudo_code](sudo_code.png)
+![pseudo_code](pseudo_code.png)
