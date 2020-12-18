@@ -4,8 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import normal
 import gym
-from RL_framework.common.networks import SequentialNetwork, Qnet_continuous_actions, ValueFunction, PolicyFunction
-from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
+from common.networks import SequentialNetwork, Qnet_continuous_actions, ValueFunction, PolicyFunction
+from common.buffer import ReplayMemory, ProcessMinibatch
 import wandb
 
 
