@@ -4,8 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import normal
 import gym
-from common.networks import SequentialNetwork, Qnet_continuous_actions, ValueFunction, PolicyFunction
-from common.buffer import ReplayMemory, ProcessMinibatch
+from RL_framework.common.networks import SequentialNetwork, Qnet_continuous_actions, ValueFunction, PolicyFunction
+from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
 import wandb
 
 
@@ -39,7 +39,7 @@ policy_layers = [nn.Linear(obs_size, 32),
                  nn.Linear(32, 64),
                  nn.ReLU(),
                  nn.Linear(64, action_n),
-                 nn.Hardtanh(action_low, action_high)]
+                 nn.Tanh()]
 learning_rates = dict(policy_lr=5e-4, value_lr=1e-3)
 critic_loss_fnc = torch.nn.SmoothL1Loss()
 tau = 0.001
@@ -72,7 +72,7 @@ for episode in tqdm(range(num_episodes)):
     terminal = False
     while terminal is False:
 
-        action = [(actor.get_policy(state) + action_noise.sample()).item()]
+        action = [torch.clamp(actor.get_policy(state) + action_noise.sample(), action_low, action_high).item()]
 
         next_state, reward, terminal, _ = env.step(action)
         step += 1
@@ -86,8 +86,8 @@ for episode in tqdm(range(num_episodes)):
             minibatch = buffer.random_sample(params['minibatch_size'])
             t = ProcessMinibatch(minibatch)  # t = transitions
 
-            target = t.rewards + gamma * (1-t.terminals) * critic.target_net(t.next_states,
-                                                                             actor.target_net(t.next_states)).detach()
+            target_action = actor.target_net(t.next_states)
+            target = t.rewards + gamma * (1-t.terminals) * critic.target_net(t.next_states, target_action).detach()
             current_v = critic.net(t.states, t.actions)
             critic_loss = critic_loss_fnc(target, current_v)
             wandb.log({"value_loss": critic_loss}, commit=False)

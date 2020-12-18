@@ -46,7 +46,7 @@ class Qnet_continuous_actions(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(obs_size, 32)
         self.fc2 = nn.Linear(32 + action_n, 64)
-        self.fc3 = nn.Linear(64, 1)
+        self.fc3 = nn.Linear(64, action_n)
 
     def forward(self, state, action):
         x1 = F.relu(self.fc1(state))
