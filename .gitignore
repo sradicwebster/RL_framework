@@ -1,5 +1,6 @@
 # Added
 /wandb
+video/**
 .DS_Store
 */.DS_Store
 

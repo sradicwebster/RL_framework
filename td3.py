@@ -19,9 +19,9 @@ action_n = 1
 
 # General details
 # ~~~~~~~~~~~~~~~
-wandb.init(project='framework_pendulum')
+wandb.init(project='framework_pendulum', monitor_gym=True)
 wandb.config.algorithm = 'TD3'
-num_episodes = 500
+num_episodes = 200
 
 gamma = 0.99
 params = {'sample_collection': 1,
@@ -69,6 +69,11 @@ buffer = ReplayMemory(params['buffer_size'])
 # ~~~~~~~~~~~~
 episode_rewards = []
 for episode in tqdm(range(num_episodes)):
+
+    env = gym.make('Pendulum-v0')
+    if episode % 40 == 0:
+        #wandb.gym.monitor()
+        env = gym.wrappers.Monitor(env, f'./video/{episode}', force=True)
 
     episode_reward = 0
     step = 0
