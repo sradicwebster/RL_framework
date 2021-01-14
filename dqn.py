@@ -10,15 +10,15 @@ import wandb
 
 # Environment details
 # ~~~~~~~~~~~~~~~~~~~
-env = gym.make('CartPole-v0')
+env = gym.make('MountainCar-v0')
 obs_size = env.observation_space.shape[0]
 n_actions = env.action_space.n
 
 # General details
 # ~~~~~~~~~~~~~~~
-wandb.init(project='framework_cartpole')
+wandb.init(project='framework_mountaincar')
 wandb.config.algorithm = 'DQN'
-num_episodes = 500
+num_episodes = 3000
 
 gamma = 0.99
 params = {'sample_collection': 1,
@@ -27,7 +27,7 @@ params = {'sample_collection': 1,
           'target_steps_update': 2000}
 epsilon = {'eps_start': 1,
            'eps_end': 0.1,
-           'eps_decay': 250}
+           'eps_decay': 500}
 wandb.config.gamma = gamma
 wandb.config.update(params)
 wandb.config.update(epsilon)
@@ -59,6 +59,10 @@ buffer = ReplayMemory(params['buffer_size'])
 episode_rewards = []
 total_step = 0
 for episode in tqdm(range(num_episodes)):
+
+    env = gym.make('MountainCar-v0')
+    if episode % 250 == 0:
+        env = gym.wrappers.Monitor(env, f'./dqn_video/{episode}', force=True)
 
     episode_reward = 0
     step = 0
