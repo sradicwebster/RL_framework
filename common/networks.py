@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions.normal import Normal
 import numpy as np
 import wandb
 import random
@@ -56,6 +57,26 @@ class Qnet_continuous_actions(nn.Module):
         return x
 
 
+class Squashed_Gaussian(nn.Module):
+    def __init__(self, obs_size, action_n):
+        super().__init__()
+        self.net = SequentialNetwork([nn.Linear(obs_size, 32),
+                                     nn.ReLU(),
+                                     nn.Linear(32, 64),
+                                     nn.Identity()])
+        self.mu_layer = nn.Linear(64, action_n)
+        self.log_std_layer = nn.Linear(64, action_n)
+
+    def forward(self, state):
+        net_out = self.net(state)
+        mu = self.mu_layer(net_out)
+        log_std = self.log_std_layer(net_out)
+        log_std = torch.clamp(log_std, -20, 2)
+        std = torch.exp(log_std)
+
+        return mu, std
+
+
 class CommonFunctions:
     def __init__(self, net, optimiser, target_net, tau):
         self.net = net
@@ -99,6 +120,25 @@ class PolicyFunction(CommonFunctions):
     def log_prob(self, state, action):
         policy = self.net(torch.from_numpy(state).float())
         return torch.log(policy[action])
+
+
+class SACPolicy(CommonFunctions):
+    def __init__(self, net, optimiser, target_net=False, tau=None):
+        super().__init__(net, optimiser, target_net, tau)
+
+    def action_selection(self, state):
+        mu, std = self.net(state)
+        # Pre-squash distribution and sample
+        pi_distribution = Normal(mu, std)
+        pi_action = pi_distribution.rsample()
+
+        # Compute logprob from Gaussian, and then apply correction for Tanh squashing.
+        logp_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
+        logp_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action))).sum(axis=1)
+
+        pi_action = torch.tanh(pi_action)
+
+        return pi_action, logp_pi
 
 
 class ValueFunction(CommonFunctions):
