@@ -97,8 +97,8 @@ for episode in tqdm(range(num_episodes)):
             critic2.soft_target_update()
 
             policy_action, policy_action_log = actor.action_selection(t.states)
-            Q_min = torch.min(critic1.target_net(t.states, policy_action),
-                                                                       critic2.target_net(t.states, policy_action))
+            Q_min = torch.min(critic1.net(t.states, policy_action),
+                                                                       critic2.net(t.states, policy_action))
             actor_loss = (Q_min - alpha * policy_action_log.reshape(-1, 1)).mean()
             wandb.log({"policy_loss": actor_loss}, commit=False)
             actor.optimise(-actor_loss)
