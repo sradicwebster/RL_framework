@@ -62,6 +62,12 @@ class ProcessMinibatch:
         self.rewards = torch.Tensor(self.rewards).reshape(-1, 1)
         self.next_states = torch.Tensor(self.next_states).squeeze()
         self.terminals = torch.Tensor(self.terminals).reshape(-1, 1)
-        self.steps = torch.Tensor(self.steps).reshape(-1, 1)
+        if self.steps[0] is not None:
+            self.steps = torch.Tensor(self.steps).reshape(-1, 1)
         if self.action_log_prob[0] is not None:
             self.action_log_prob = torch.stack(self.action_log_prob)
+
+    def standardise(self) -> object:
+        self.states = (self.states - self.states.mean()) / self.states.std()
+        self.next_states = (self.next_states - self.next_states.mean()) / self.next_states.std()
+
