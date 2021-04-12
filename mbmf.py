@@ -47,7 +47,6 @@ params = {'sample_collection': 10,
 wandb.config.gamma = gamma
 wandb.config.update(params)
 
-
 # Networks details
 # ~~~~~~~~~~~~~~~~
 network_layers = {'model_layers': [nn.Linear(obs_size + 1, 32),
@@ -67,10 +66,10 @@ def K_rollouts(state, K, horizon):
     for i, sample in enumerate(samples):
         current_state = torch.Tensor(state)
         reward = 0
-        for action in sample:
+        for i, action in enumerate(sample):
             state_action = torch.cat((current_state, torch.Tensor([action])))
             current_state += model(state_action)
-            reward += reward_func(current_state)
+            reward += gamma**i * reward_func(current_state)
         rewards[i] = reward
     best_K = np.argmax(rewards)
     return samples[best_K, 0]
