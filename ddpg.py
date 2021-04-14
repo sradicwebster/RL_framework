@@ -11,23 +11,21 @@ import wandb
 
 # Environment details
 # ~~~~~~~~~~~~~~~~~~~
-env = gym.make('Pendulum-v0')
+env = gym.make('LunarLanderContinuous-v2')
 obs_size = env.observation_space.shape[0]
-#  action space currently only for 1 action
-action_high = env.action_space.high.item()
-action_low = env.action_space.low.item()
-action_n = 1
+action_size = env.action_space.shape[0]
+action_high = env.action_space.high
+action_low = env.action_space.low
 
 # General details
 # ~~~~~~~~~~~~~~~
-wandb.init(project='framework_pendulum')
+wandb.init(project='lunar_lander_cont')
 wandb.config.algorithm = 'DDPG'
 num_episodes = 500
-
 gamma = 0.99
 params = {'sample_collection': 1,
-          'buffer_size': 10000,
-          'minibatch_size': 64}
+          'buffer_size': 5000,
+          'minibatch_size': 32}
 action_noise = normal.Normal(0, 0.1)  # add OU noise?
 wandb.config.gamma = gamma
 wandb.config.update(params)
@@ -38,7 +36,7 @@ policy_layers = [nn.Linear(obs_size, 32),
                  nn.ReLU(),
                  nn.Linear(32, 64),
                  nn.ReLU(),
-                 nn.Linear(64, action_n),
+                 nn.Linear(64, action_size),
                  nn.Tanh()]
 learning_rates = dict(policy_lr=5e-4, value_lr=1e-3)
 critic_loss_fnc = torch.nn.SmoothL1Loss()
@@ -51,7 +49,7 @@ wandb.config.tau = tau
 # Initialisation
 # ~~~~~~~~~~~~~~
 policy_net = SequentialNetwork(policy_layers)
-value_net = Qnet_continuous_actions(obs_size, action_n)
+value_net = Qnet_continuous_actions(obs_size, action_size)
 policy_opt = optim.Adam(policy_net.parameters(), lr=learning_rates['policy_lr'])
 value_opt = optim.Adam(value_net.parameters(), lr=learning_rates['value_lr'], weight_decay=1e-2)
 actor = PolicyFunction(policy_net, policy_opt, target_net=True, tau=tau)
@@ -72,7 +70,9 @@ for episode in tqdm(range(num_episodes)):
     terminal = False
     while terminal is False:
 
-        action = [torch.clamp(actor.get_policy(state) + action_noise.sample(), action_low, action_high).item()]
+        action = actor.get_policy(state)
+        action = [torch.clamp(action[i] + action_noise.sample(), action_low[i], action_high[i]).item()
+                  for i in range(action_size)]
 
         next_state, reward, terminal, _ = env.step(action)
         step += 1

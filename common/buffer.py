@@ -57,17 +57,20 @@ class ProcessMinibatch:
             self.steps.append(transition.step)
             self.action_log_prob.append(transition.action_log_prob)
 
-        self.states = torch.Tensor(self.states) #.squeeze()
-        self.actions = torch.tensor(self.actions).reshape(-1, 1)
+        self.states = torch.Tensor(self.states)
+        if type(self.actions[0]) == int or self.actions[0].size == 1:
+            self.actions = torch.tensor(self.actions).reshape(-1, 1)
+        else:
+            self.actions = torch.tensor(self.actions)
         self.rewards = torch.Tensor(self.rewards).reshape(-1, 1)
-        self.next_states = torch.Tensor(self.next_states).squeeze()
+        self.next_states = torch.Tensor(self.next_states)
         self.terminals = torch.Tensor(self.terminals).reshape(-1, 1)
         if self.steps[0] is not None:
             self.steps = torch.Tensor(self.steps).reshape(-1, 1)
         if self.action_log_prob[0] is not None:
             self.action_log_prob = torch.stack(self.action_log_prob)
 
-    def standardise(self) -> object:
-        self.states = (self.states - self.states.mean()) / self.states.std()
-        self.next_states = (self.next_states - self.next_states.mean()) / self.next_states.std()
+    def standardise(self, obs_max):
+        self.states /= obs_max
+        self.next_states /= obs_max
 

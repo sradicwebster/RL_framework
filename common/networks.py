@@ -17,7 +17,7 @@ class SequentialNetwork(nn.Module):
 
 
 class DuelingNetwork(nn.Module):
-    def __init__(self, nodes):  # nodes = [obs_size, 64, 128, n_actions]
+    def __init__(self, nodes):  # nodes = [obs_size, 64, 128, action_size]
         super(DuelingNetwork, self).__init__()
 
         self.fc1 = nn.Linear(nodes[0], nodes[1])
