@@ -4,8 +4,8 @@ import torch.optim as optim
 from RL_framework.common.networks import SequentialNetwork
 from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
 from RL_framework.common.utils import *
-from RL_framework.common.model_based import MPC
-from RL_framework.common.gym_env import gym_env
+from RL_framework.common.model_based import DynamicsModel, MPC
+from RL_framework.common.gymenv import GymEnv
 import wandb
 from imitation.data.types import Transitions
 import numpy as np
@@ -16,15 +16,15 @@ from stable_baselines3 import PPO
 
 # Environment details
 # ~~~~~~~~~~~~~~~~~~~
-env = gym_env('CartPole-v0')  # must be discrete action space for mbmf
-env.obs_max[1] = 4  # replace Int for env observation max
-env.obs_max[3] = 5
+env = GymEnv('CartPole-v0')  # must be discrete action space for mbmf
+env.obs_high[1] = 4  # replace Int for env observation max
+env.obs_high[3] = 5
 
 # General details
 # ~~~~~~~~~~~~~~
 wandb.init(project='framework_cartpole')
 wandb.config.algorithm = 'MBMF'
-num_episodes = 1
+num_episodes = 5
 
 gamma = 0.99
 params = {'sample_collection': 10,
@@ -54,13 +54,13 @@ wandb.config.update(learning_rates)
 
 # Initialisation
 # ~~~~~~~~~~~~~~
-model = SequentialNetwork(network_layers['model_layers'])
-opt = optim.Adam(model.parameters(), lr=learning_rates['model_lr'])
+model_net = SequentialNetwork(network_layers['model_layers'])
+opt = optim.Adam(model_net.parameters(), lr=learning_rates['model_lr'])
 
 dataset_random = ReplayMemory(params['random_buffer_size'])
 dataset_rl = ReplayMemory(params['buffer_size'])
 
-MPC = MPC(model, env, gamma)
+MPC = MPC(model_net, env, gamma)
 
 # Gather random data and train dynamics models
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -76,10 +76,10 @@ while len(dataset_random) < params['random_buffer_size']:
 for i in range(params['training_epoch']):
     minibatch = dataset_random.random_sample(params['minibatch_size'])
     t = ProcessMinibatch(minibatch)
-    t.standardise(env.obs_max)
+    t.standardise(env.obs_high)
     target = t.next_states - t.states + torch.normal(0, 0.001, size=t.states.shape)
     state_actions = torch.cat((t.states, t.actions), dim=1)
-    current = model(state_actions + torch.normal(0, 0.001, size=state_actions.shape))
+    current = model_net(state_actions + torch.normal(0, 0.001, size=state_actions.shape))
     loss = loss_fnc(target, current)
     wandb.log({"model_loss": loss})
     opt.zero_grad()
@@ -110,12 +110,12 @@ for episode in tqdm(range(num_episodes)):
             minibatch_rl = dataset_rl.random_sample(round(params['minibatch_size'] * params['dataset_ratio']))
             t_random = ProcessMinibatch(minibatch_random)
             t_rl = ProcessMinibatch(minibatch_rl)
-            t_random.standardise(env.obs_max)
-            t_rl.standardise(env.obs_max)
+            t_random.standardise(env.obs_high)
+            t_rl.standardise(env.obs_high)
             target = torch.cat((t_random.next_states, t_rl.next_states)) - torch.cat((t_random.states, t_rl.states))
             state_actions = torch.cat((torch.cat((t_random.states, t_rl.states)),
                                        torch.cat((t_random.actions, t_rl.actions))), dim=1)
-            current = model(state_actions)
+            current = model_net(state_actions)
             loss = loss_fnc(target, current)
             wandb.log({"model_loss": loss}, commit=False)
             opt.zero_grad()
@@ -146,6 +146,6 @@ gail_trainer = adversarial.GAIL(vec_env, expert_data=transitions, expert_batch_s
 gail_trainer.train(total_timesteps=2048)
 
 # MF RL
-model = PPO(bc_trainer.policy, env.env, verbose=1)
-model.learn(total_timesteps=100)
+model_net = PPO(bc_trainer.policy, env.env, verbose=1)
+model_net.learn(total_timesteps=100)
 '''
