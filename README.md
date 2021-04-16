@@ -10,4 +10,5 @@
 | DDPG | Continuous | $\approx 10000$ | 1 | $\approx 32$ | $r+\gamma\ Q(s^\prime,\mu(s^\prime))$ | $Q(s,\mu(s))$ | $\mu(s) + Noise$ | Target Q-net and policy net (soft updates) |
 | TD3 | Continuous | $\approx 10000$ | 1 | $\approx 32$ | minimum $r+\gamma\ Q(s^\prime,\mu(s^\prime)+Noise)$ from 2 nets | $Q(s,\mu(s))$ | $\mu(s) + Noise$ | Target Q-net and policy net (soft updates, policy update is delayed) |
 | SAC | Continuous | $\approx 10000$ | 1 | $\approx 32$ | $r+\gamma\ (min \ Q(s^\prime,\tilde{a^\prime})-\alpha\ log\ \pi_\theta) \ \tilde{a^\prime} \sim \pi_\theta $  | $ min \ Q(s,\tilde{a_\theta}(s))-\alpha\ log\ \pi_\theta $ | Sample from squashed Gaussian policy |Target Q-net (soft updates), reparameterisation trick used for action selection |
-| MBMF | Either | Random and RL | - | $\approx 128$ | N/A | N/A | MPC rollouts | Dynamics model learned | 
+| MBMF (only MB imlemented | Either (discrete implemented) | Random and RL | - | $\approx 128$ | N/A | N/A | MPC rollouts | Dynamics model learned | 
+| MVE | Continuous | ~5000 | ~10 | ~64 for model training, 1 for RL | k-step MVE | DDPG actor updates | actor + noise | Dynamics models and actor critic |
