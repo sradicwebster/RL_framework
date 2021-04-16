@@ -35,13 +35,13 @@ class DuelingNetwork(nn.Module):
         value = self.value(value)
         adv = self.adv(adv)
 
-        advAverage = torch.mean(adv, dim=0, keepdim=True)
-        Q = value + adv - advAverage
+        adv_average = torch.mean(adv, dim=0, keepdim=True)
+        Q = value + adv - adv_average
 
         return Q
 
 
-class Qnet_continuous_actions(nn.Module):
+class QnetContinuousActions(nn.Module):
     #  add layer norm??
     def __init__(self, obs_size, action_n):
         super().__init__()
@@ -57,7 +57,7 @@ class Qnet_continuous_actions(nn.Module):
         return x
 
 
-class Squashed_Gaussian(nn.Module):
+class SquashedGaussian(nn.Module):
     def __init__(self, obs_size, action_n):
         super().__init__()
         self.net = SequentialNetwork([nn.Linear(obs_size, 32),
@@ -132,13 +132,13 @@ class SACPolicy(CommonFunctions):
         pi_distribution = Normal(mu, std)
         pi_action = pi_distribution.rsample()
 
-        # Compute logprob from Gaussian, and then apply correction for Tanh squashing.
-        logp_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
-        logp_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action))).sum(axis=1)
+        # Compute log prob from Gaussian, and then apply correction for Tanh squashing.
+        logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
+        logprob_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action))).sum(axis=1)
 
         pi_action = torch.tanh(pi_action)
 
-        return pi_action, logp_pi
+        return pi_action, logprob_pi
 
 
 class ValueFunction(CommonFunctions):

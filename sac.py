@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import normal
 import gym
-from RL_framework.common.networks import Qnet_continuous_actions, Squashed_Gaussian, ValueFunction, SACPolicy
+from RL_framework.common.networks import QnetContinuousActions, SquashedGaussian, ValueFunction, SACPolicy
 from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
 import wandb
 
@@ -43,9 +43,9 @@ wandb.config.tau = tau
 
 # Initialisation
 # ~~~~~~~~~~~~~~
-policy_net = Squashed_Gaussian(obs_size, action_n)
-value_net1 = Qnet_continuous_actions(obs_size, action_n)
-value_net2 = Qnet_continuous_actions(obs_size, action_n)
+policy_net = SquashedGaussian(obs_size, action_n)
+value_net1 = QnetContinuousActions(obs_size, action_n)
+value_net2 = QnetContinuousActions(obs_size, action_n)
 policy_opt = optim.Adam(policy_net.parameters(), lr=learning_rates['policy_lr'])
 value_opt1 = optim.Adam(value_net1.parameters(), lr=learning_rates['value_lr'])
 value_opt2 = optim.Adam(value_net2.parameters(), lr=learning_rates['value_lr'])

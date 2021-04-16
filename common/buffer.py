@@ -58,7 +58,7 @@ class ProcessMinibatch:
             self.action_log_prob.append(transition.action_log_prob)
 
         self.states = torch.Tensor(self.states)
-        if type(self.actions[0]) == int or self.actions[0].size == 1:
+        if type(self.actions[0]) == int:  #or self.actions[0].size == 1:
             self.actions = torch.tensor(self.actions).reshape(-1, 1)
         else:
             self.actions = torch.tensor(self.actions)

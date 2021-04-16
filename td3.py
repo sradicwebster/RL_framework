@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import normal
 import gym
-from RL_framework.common.networks import SequentialNetwork, Qnet_continuous_actions, ValueFunction, PolicyFunction
+from RL_framework.common.networks import SequentialNetwork, QnetContinuousActions, ValueFunction, PolicyFunction
 from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
 import wandb
 
@@ -54,8 +54,8 @@ wandb.config.policy_delay = policy_delay
 # Initialisation
 # ~~~~~~~~~~~~~~
 policy_net = SequentialNetwork(policy_layers)
-value_net1 = Qnet_continuous_actions(obs_size, action_n)
-value_net2 = Qnet_continuous_actions(obs_size, action_n)
+value_net1 = QnetContinuousActions(obs_size, action_n)
+value_net2 = QnetContinuousActions(obs_size, action_n)
 policy_opt = optim.Adam(policy_net.parameters(), lr=learning_rates['policy_lr'])
 value_opt1 = optim.Adam(value_net1.parameters(), lr=learning_rates['value_lr'], weight_decay=1e-2)
 value_opt2 = optim.Adam(value_net2.parameters(), lr=learning_rates['value_lr'], weight_decay=1e-2)
