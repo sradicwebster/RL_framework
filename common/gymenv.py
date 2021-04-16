@@ -10,6 +10,7 @@ class GymEnv:
         self.env = gym.make(env)
         self.obs_size = self.env.observation_space.shape[0]
         self.obs_high = torch.Tensor(self.env.observation_space.high)
+        self.obs_low = torch.Tensor(self.env.observation_space.low)
         if str(self.env.action_space)[:8] == 'Discrete':
             self.action_size = self.env.action_space.n
         elif str(self.env.action_space)[:3] == 'Box':
