@@ -3,7 +3,8 @@ import torch.optim as optim
 from torch.distributions import normal
 import wandb
 from tqdm import tqdm
-from RL_framework.common.networks import SequentialNetwork, QnetContinuousActions, ValueFunction, PolicyFunction
+from RL_framework.common.networks import SequentialNetwork, QnetContinuousActions, DynamicsModelTermination,\
+    ValueFunction, PolicyFunction
 from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
 from RL_framework.common.utils import *
 from RL_framework.common.gymenv import GymEnv
@@ -17,12 +18,12 @@ env = GymEnv('Pendulum-v0')
 # ~~~~~~~~~~~~~~~
 wandb.init(project='framework_pendulum')
 wandb.config.algorithm = 'MVE'
-num_episodes = 50
+num_episodes = 100
 gamma = 0.99
 params = {'sample_collection': 1,
-          'buffer_size': 5000,
-          'minibatch_size': 128,
-          'training_epoch': 20,
+          'buffer_size': 10000,
+          'minibatch_size': 64,
+          'training_epoch': 5,
           'sampled_transitions': 64,
           'imagination_steps': 1
           }
@@ -32,22 +33,16 @@ wandb.config.update(params)
 
 # Networks details
 # ~~~~~~~~~~~~~~~~
-network_layers = {'model_layers': [nn.Linear(env.obs_size + env.action_size, 32),
-                                   nn.ReLU(),
-                                   nn.Linear(32, 64),
-                                   nn.ReLU(),
-                                   nn.Linear(64, 64),
-                                   nn.ReLU(),
-                                   nn.Linear(64, env.obs_size)],
-                  'policy_layers': [nn.Linear(env.obs_size, 32),
+network_layers = {'policy_layers': [nn.Linear(env.obs_size, 32),
                                     nn.ReLU(),
                                     nn.Linear(32, 64),
                                     nn.ReLU(),
                                     nn.Linear(64, env.action_size),
                                     nn.Tanh()]
                   }
-learning_rates = dict(model_lr=1e-3, policy_lr=1e-4, value_lr=5e-4)
-model_loss_fnc = torch.nn.MSELoss()
+learning_rates = dict(model_lr=1e-3, policy_lr=5e-4, value_lr=1e-3)
+model_loss_fnc = lambda current, target: torch.nn.MSELoss()(current[:, :env.obs_size], target[:, :env.obs_size]) + \
+                        torch.nn.BCEWithLogitsLoss()(current[:, -1], target[:, -1])
 critic_loss_fnc = torch.nn.SmoothL1Loss()
 tau = 0.001
 wandb.config.update(network_layers)
@@ -58,7 +53,7 @@ wandb.config.tau = tau
 # ~~~~~~~~~~~~~~
 buffer = ReplayMemory(params['buffer_size'])
 
-model_net = SequentialNetwork(network_layers['model_layers'])
+model_net = DynamicsModelTermination(env.obs_size, env.action_size)
 model_opt = optim.Adam(model_net.parameters(), lr=learning_rates['model_lr'])
 dynamics = DynamicsModel(model_net, buffer, model_loss_fnc, model_opt, env, gamma)
 
@@ -69,8 +64,10 @@ value_opt = optim.Adam(value_net.parameters(), lr=learning_rates['value_lr'], we
 actor = PolicyFunction(policy_net, policy_opt, target_net=True, tau=tau)
 critic = ValueFunction(value_net, value_opt, target_net=True, tau=tau)
 
-# Gather data and train dynamics model
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Gather data and training
+# ~~~~~~~~~~~~~~~~~~~~~~~~
+dynamics.populate_buffer_randomly(0.1)
+
 episode_rewards = []
 for episode in tqdm(range(num_episodes)):
     episode_reward = 0
@@ -103,26 +100,29 @@ for episode in tqdm(range(num_episodes)):
                 wandb.log({"policy_loss": actor_loss}, commit=False)
                 actor.optimise(-actor_loss)
 
-                imagine_state = t.next_states[0]
+                imagine_state = t.next_states[0].reshape(1, -1)
                 for j in range(params['imagination_steps']):
                     with torch.no_grad():
-                        imagine_action = actor.target_net(imagine_state)
-                        reward = env.reward_func(imagine_state.numpy(), imagine_action.numpy())
-                        imagine_next_state = dynamics.model(torch.cat((imagine_state, imagine_action)))
+                        imagine_action = actor.target_net(imagine_state).reshape(1, -1)
+                        reward = env.reward_func(imagine_state.squeeze().numpy(), imagine_action.squeeze().numpy())
+                        imagine_next_state, imagine_terminal = dynamics.model(imagine_state, imagine_action)
+                        imagine_terminal = torch.argmax(imagine_terminal, dim=1).reshape(-1, 1)
 
-                        t.states = torch.cat((t.states, imagine_state.reshape(1, -1)))
-                        t.actions = torch.cat((t.actions, imagine_action.reshape(1, -1)))
+                        t.states = torch.cat((t.states, imagine_state))
+                        t.actions = torch.cat((t.actions, imagine_action))
                         t.rewards = torch.cat((t.rewards, torch.Tensor([gamma ** j * reward]).reshape(1, -1)))
                         imagine_state = imagine_next_state
 
+                        if imagine_terminal.item() == 1:
+                            break
+
                 with torch.no_grad():
-                    imagine_action = actor.target_net(imagine_state)
+                    imagine_action = actor.target_net(imagine_state).reshape(1, -1)
                     bootstrap_Q = gamma ** params['imagination_steps'] * \
-                        critic.target_net(imagine_state.reshape(1, -1), imagine_action.reshape(1, -1))
+                        critic.target_net(imagine_state, imagine_action)
                 target = torch.stack([t.rewards[i:].sum() + bootstrap_Q for i in range(len(t.rewards))]).reshape(-1, 1)
                 current = critic.net(t.states, t.actions)
                 critic_loss = critic_loss_fnc(target, current)
-                #critic_loss = (target - current)**2 / params['imagination_steps']
                 wandb.log({"value_loss": critic_loss}, commit=False)
                 critic.optimise(critic_loss)
 

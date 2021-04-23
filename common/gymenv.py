@@ -37,6 +37,6 @@ class GymEnv:
             th = np.arccos(np.clip(state[0],-1,1))
             thdot = state[2]
             max_torque = 2.
-            u = np.clip(action, -max_torque, max_torque)[0]
+            u = np.clip(action, -max_torque, max_torque)
             costs = angle_normalize(th) ** 2 + .1 * thdot ** 2 + .001 * (u ** 2)
             return -costs
