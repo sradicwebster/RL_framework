@@ -12,7 +12,10 @@ class SequentialNetwork(nn.Module):
     def __init__(self, layers):
         super(SequentialNetwork, self).__init__()
         self.layers = nn.Sequential(*layers)
-    def forward(self, x): return self.layers(x)
+
+    def forward(self, x):
+        return self.layers(x)
+
 
 class DuelingNetwork(nn.Module):
     def __init__(self, nodes):  # nodes = [obs_size, 64, 128, action_size]
@@ -22,6 +25,7 @@ class DuelingNetwork(nn.Module):
         self.fc_adv = nn.Linear(nodes[1], nodes[2])
         self.value = nn.Linear(nodes[2], 1)
         self.adv = nn.Linear(nodes[2], nodes[-1])
+
     def forward(self, x):
         x = F.relu(self.fc1(x))
         value = F.relu(self.fc_value(x))
@@ -30,8 +34,8 @@ class DuelingNetwork(nn.Module):
         adv = self.adv(adv)
         adv_average = torch.mean(adv, dim=0, keepdim=True)
         Q = value + adv - adv_average
-
         return Q
+
 
 class QnetContinuousActions(nn.Module):
     def __init__(self, obs_size, action_n):
@@ -39,12 +43,14 @@ class QnetContinuousActions(nn.Module):
         self.fc1 = nn.Linear(obs_size, 32)
         self.fc2 = nn.Linear(32 + action_n, 64)
         self.fc3 = nn.Linear(64, action_n)
+
     def forward(self, state, action):
         x1 = F.relu(self.fc1(state))
         x = torch.cat((x1, action), dim=1)
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
 
 class SquashedGaussian(nn.Module):
     def __init__(self, obs_size, action_n):
@@ -55,6 +61,7 @@ class SquashedGaussian(nn.Module):
                                      nn.Identity()])
         self.mu_layer = nn.Linear(64, action_n)
         self.log_std_layer = nn.Linear(64, action_n)
+
     def forward(self, state):
         net_out = self.net(state)
         mu = self.mu_layer(net_out)
@@ -63,7 +70,8 @@ class SquashedGaussian(nn.Module):
         std = torch.exp(log_std)
         return mu, std
 
-class DynamicsModelTermination(nn.Module):
+
+class DynamicsNetTermination(nn.Module):
     def __init__(self, obs_size, action_size):
         super().__init__()
         self.fc1 = nn.Linear(obs_size + action_size, 32)
@@ -80,6 +88,12 @@ class DynamicsModelTermination(nn.Module):
         next_state = self.state_output(x)
         terminal = self.soft(self.terminal(x))
         return next_state, terminal
+    # terminals = torch.argmax(terminal, dim=1).reshape(-1, 1)
+
+    def model_loss_fnc(self, current, target, env):
+         mse = torch.nn.MSELoss()(current[:, :env.obs_size], target[:, :env.obs_size])
+         bce = torch.nn.BCEWithLogitsLoss()(current[:, -1], target[:, -1])
+         return mse + bce
 
 
 class CommonFunctions:

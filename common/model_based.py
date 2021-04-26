@@ -1,6 +1,6 @@
 import torch
 import wandb
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 from RL_framework.common.buffer import ProcessMinibatch
 
@@ -32,20 +32,19 @@ class DynamicsModel:
         for i in range(epochs):
             minibatch = self.buffer.random_sample(minibatch_size)
             t = ProcessMinibatch(minibatch)
-            t.standardise(self.env.obs_high)
+            #t.standardise(self.env.obs_high)
             if model_type == 'forward':
-                target_state = t.next_states + torch.normal(0, 0.001, size=t.states.shape)
+                target = t.next_states + torch.normal(0, 0.001, size=t.states.shape)
             elif model_type == 'diff':
-                target_state = t.next_states - t.states + torch.normal(0, 0.001, size=t.states.shape)
-            target = torch.cat((target_state, t.terminals), dim=1)
-            next_states, terminal = self.model(t.states + torch.normal(0, 0.001, size=t.states.shape),
-                                 t.actions + torch.normal(0, 0.001, size=t.actions.shape))
-            terminals = torch.argmax(terminal, dim=1).reshape(-1, 1)
-            loss = self.loss_func(torch.cat((next_states, terminals), dim=1), target)
+                target = t.next_states - t.states + torch.normal(0, 0.001, size=t.states.shape)
+            next_states = self.model(torch.cat((t.states + torch.normal(0, 0.001, size=t.states.shape),
+                                     t.actions + torch.normal(0, 0.001, size=t.actions.shape)), dim=1))
+            loss = self.loss_func(next_states, target)
             wandb.log({"model_loss": loss}, commit=False)
             self.opt.zero_grad()
             loss.backward()
             self.opt.step()
+
 
 '''
     def plot_vector_field(self, dims, policy, n_pts=50):
@@ -70,6 +69,7 @@ class DynamicsModel:
         ax.contourf(X.T, Y.T, torch.sqrt(dx.detach().T ** 2 + dy.detach().T ** 2), cmap='RdYlBu')
         fig.show()
 '''
+
 
 class MPC:
     def __init__(self, model, env, gamma):
