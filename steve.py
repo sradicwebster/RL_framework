@@ -23,7 +23,7 @@ params = {'sample_collection': 1,
           'buffer_size': 5000,
           'minibatch_size': 64,
           'training_epoch': 5,
-          'imagination_steps': 1
+          'imagination_steps': 5
           }
 action_noise = normal.Normal(0, 0.05)
 wandb.config.gamma = gamma
@@ -120,15 +120,16 @@ for episode in tqdm(range(num_episodes)):
                     target = t.rewards + gamma * critic.target_net(t.next_states, actor.target_net(t.next_states))
                     targets[:, 0, :, c] = torch.ones(params['minibatch_size'], len(dynamics)) * target
 
-                #imagine_state = [t.next_states] * len(dynamics)
-                imagine_state = t.next_states
-                for h in range(1, params['imagination_steps']+1):  # only works for H=1
-                    imagine_action = actor.target_net(imagine_state)
-                    reward = [env.reward_func(imagine_state[i].squeeze().numpy(), imagine_action[i].squeeze().numpy())
-                              for i in range(len(imagine_action))]
-                    dis_reward = gamma ** h * torch.Tensor(reward).reshape(-1, 1)
+                for d, dynamic in enumerate(dynamics):
+                    imagine_state = t.next_states
+                    dis_reward = 0
+                    for h in range(1, params['imagination_steps']+1):
 
-                    for d, dynamic in enumerate(dynamics):
+                        imagine_action = actor.target_net(imagine_state)
+                        reward = [env.reward_func(imagine_state[i].squeeze().numpy(), imagine_action[i].squeeze()
+                                                  .numpy()) for i in range(len(imagine_action))]
+                        dis_reward += gamma ** h * torch.Tensor(reward).reshape(-1, 1)
+
                         imagine_next_state = dynamic.model(torch.cat((imagine_state, imagine_action), dim=1))
 
                         for c, critic in enumerate(critics):
@@ -136,7 +137,11 @@ for episode in tqdm(range(num_episodes)):
                                      * critic.target_net(imagine_next_state, actor.target_net(imagine_next_state))
                             targets[:, h, d, c] = target.squeeze()
 
-            target = targets.mean(dim=(1, 2, 3)).reshape(-1, 1)
+                        imagine_state = imagine_next_state
+
+            rollout_var = targets.var(dim=(2, 3))
+            normalised_weights = rollout_var / rollout_var.sum(dim=1, keepdims=True)
+            target = (targets.mean(dim=(2, 3)) * normalised_weights).sum(dim=1, keepdims=True)
 
             critic_losses = []
             for critic in critics:
