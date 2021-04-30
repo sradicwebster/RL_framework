@@ -15,8 +15,8 @@ class GymEnv:
             self.action_size = self.env.action_space.n
         elif str(self.env.action_space)[:3] == 'Box':
             self.action_size = self.env.action_space.shape[0]
-            self.action_high = self.env.action_space.high
-            self.action_low = self.env.action_space.low
+            self.action_high = torch.Tensor(self.env.action_space.high)
+            self.action_low = torch.Tensor(self.env.action_space.low)
 
     def reward_func(self, state, action=None):
 
@@ -34,7 +34,7 @@ class GymEnv:
             def angle_normalize(x):
                 return ((x + np.pi) % (2 * np.pi)) - np.pi
 
-            th = np.arccos(np.clip(state[0],-1,1)) # is this wrong??
+            th = np.arccos(state[0])
             thdot = state[2]
             max_torque = 2.
             u = np.clip(action, -max_torque, max_torque)
