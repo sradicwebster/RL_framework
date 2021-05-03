@@ -34,7 +34,7 @@ class GymEnv:
             def angle_normalize(x):
                 return ((x + np.pi) % (2 * np.pi)) - np.pi
 
-            th = np.arccos(state[0])
+            th = np.arctan(state[1]/state[0])
             thdot = state[2]
             max_torque = 2.
             u = np.clip(action, -max_torque, max_torque)

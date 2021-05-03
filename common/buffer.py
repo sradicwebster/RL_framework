@@ -3,7 +3,7 @@ import random
 import torch
 
 
-Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'terminal', 'step',
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'terminal', 'episode_step',
                                        'action_log_prob'))
 
 
@@ -54,7 +54,7 @@ class ProcessMinibatch:
             self.rewards.append(transition.reward)
             self.next_states.append(transition.next_state)
             self.terminals.append(transition.terminal)
-            self.steps.append(transition.step)
+            self.steps.append(transition.episode_step)
             self.action_log_prob.append(transition.action_log_prob)
 
         self.states = torch.Tensor(self.states)

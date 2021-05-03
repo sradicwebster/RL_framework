@@ -37,12 +37,29 @@ class DuelingNetwork(nn.Module):
         return Q
 
 
-class QnetContinuousActions(nn.Module):
-    def __init__(self, obs_size, action_n):
+class DeterministicPolicy(nn.Module):
+    def __init__(self, env):
         super().__init__()
-        self.fc1 = nn.Linear(obs_size, 32)
-        self.fc2 = nn.Linear(32 + action_n, 64)
-        self.fc3 = nn.Linear(64, action_n)
+        self.action_high = env.action_high
+        self.fc1 = nn.Linear(env.obs_size, 32)
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64, 64)
+        self.fc4 = nn.Linear(64, env.action_size)
+
+    def forward(self, state):
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = torch.tanh(self.fc4(x))
+        return self.action_high * x  # will only work for action_low = -action_high
+
+
+class QnetContinuousActions(nn.Module):
+    def __init__(self, env):
+        super().__init__()
+        self.fc1 = nn.Linear(env.obs_size, 32)
+        self.fc2 = nn.Linear(32 + env.action_size, 64)
+        self.fc3 = nn.Linear(64, env.action_size)
 
     def forward(self, state, action):
         x1 = F.relu(self.fc1(state))
@@ -53,14 +70,15 @@ class QnetContinuousActions(nn.Module):
 
 
 class SquashedGaussian(nn.Module):
-    def __init__(self, obs_size, action_n):
+    def __init__(self, env):
         super().__init__()
-        self.net = SequentialNetwork([nn.Linear(obs_size, 32),
+        self.env = env
+        self.net = SequentialNetwork([nn.Linear(env.obs_size, 32),
                                      nn.ReLU(),
                                      nn.Linear(32, 64),
                                      nn.Identity()])
-        self.mu_layer = nn.Linear(64, action_n)
-        self.log_std_layer = nn.Linear(64, action_n)
+        self.mu_layer = nn.Linear(64, env.action_size)
+        self.log_std_layer = nn.Linear(64, env.action_size)
 
     def forward(self, state):
         net_out = self.net(state)
@@ -153,11 +171,11 @@ class SACPolicy(CommonFunctions):
 
         # Compute log prob from Gaussian, and then apply correction for Tanh squashing.
         logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
-        logprob_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action))).sum(axis=1)
+        logprob_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action))).sum()
 
         pi_action = torch.tanh(pi_action)
 
-        return pi_action, logprob_pi
+        return self.net.env.action_high * pi_action, logprob_pi
 
 
 class ValueFunction(CommonFunctions):
