@@ -18,14 +18,13 @@ env.obs_high[3] = 5
 # ~~~~~~~~~~~~~~~
 wandb.init(project='framework_cartpole')
 wandb.config.algorithm = 'PPO'
-num_episodes = 1000
+num_episodes = 700
 
 gamma = 0.99
-params = {'sample_collection': 32,
-          'buffer_size': 32,
-          'minibatch_size': 32,
-          'actor_grad_steps': 32,
-          'critic_grad_steps': 32}
+params = {'sample_collection': 1,
+          'buffer_size': 1000,
+          'actor_grad_steps': 5,
+          'critic_grad_steps': 20}
 clip_ratio = 0.2
 
 wandb.config.gamma = gamma
@@ -79,16 +78,17 @@ for episode in tqdm(range(num_episodes)):
         state = next_state
         episode_reward += reward
 
-        if (episode_step % params['sample_collection'] == 0 or terminal is True) and\
-                len(buffer) >= params['minibatch_size']:
+        if terminal is True:
 
-            minibatch = buffer.ordered_sample(params['minibatch_size'])
+            minibatch = buffer.ordered_sample(episode_step)
             t = ProcessMinibatch(minibatch)
+
             with torch.no_grad():
                 td_error = t.rewards + gamma * (1 - t.terminals) * critic.net(t.next_states) - critic.net(t.states)
             discounted_gamma = gamma ** t.steps
             advantage = discounted_cumsum(td_error, discounted_gamma)
-            # advantage = (advantage - advantage.mean()) / advantage.std()
+            advantage = (advantage - advantage.mean()) / advantage.std()
+            rewards_to_go = discounted_cumsum(t.rewards, discounted_gamma)
             old_action_probs = t.action_log_prob.reshape(-1, 1).detach()
 
             for _ in range(params['actor_grad_steps']):
@@ -99,7 +99,6 @@ for episode in tqdm(range(num_episodes)):
                 wandb.log({"policy_loss": actor_loss, 'step': global_step, 'episode': episode}, commit=False)
                 actor.optimise(-actor_loss)
 
-            rewards_to_go = discounted_cumsum(t.rewards, discounted_gamma)
             for _ in range(params['critic_grad_steps']):
                 current_v = critic.net(t.states)
                 critic_loss = critic_loss_fnc(rewards_to_go, current_v)
