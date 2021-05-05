@@ -69,7 +69,7 @@ class QnetContinuousActions(nn.Module):
         return x
 
 
-class SquashedGaussian(nn.Module):
+class GaussianPolicy(nn.Module):
     def __init__(self, env):
         super().__init__()
         self.env = env
@@ -168,13 +168,10 @@ class SACPolicy(CommonFunctions):
         # Pre-squash distribution and sample
         pi_distribution = Normal(mu, std)
         pi_action = pi_distribution.rsample()
-
         # Compute log prob from Gaussian, and then apply correction for Tanh squashing.
-        logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
-        logprob_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action))).sum()
-
+        logprob_pi = pi_distribution.log_prob(pi_action)
+        logprob_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action)))
         pi_action = torch.tanh(pi_action)
-
         return self.net.env.action_high * pi_action, logprob_pi
 
 
