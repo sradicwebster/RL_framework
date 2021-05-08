@@ -21,8 +21,7 @@ wandb.config.algorithm = 'PPO'
 num_episodes = 700
 
 gamma = 0.99
-params = {'sample_collection': 1,
-          'buffer_size': 1000,
+params = {'buffer_size': 1000,
           'actor_grad_steps': 5,
           'critic_grad_steps': 20}
 clip_ratio = 0.2
