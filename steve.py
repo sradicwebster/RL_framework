@@ -61,8 +61,8 @@ model_net1 = SequentialNetwork(network_layers['model_layers'])
 model_net2 = SequentialNetwork(network_layers['model_layers'])
 model_opt1 = optim.Adam(model_net1.parameters(), lr=learning_rates['model_lr'])
 model_opt2 = optim.Adam(model_net2.parameters(), lr=learning_rates['model_lr'])
-dynamics1 = DynamicsModel(model_net1, buffer, model_loss_fnc, model_opt1, env, type='diff')
-dynamics2 = DynamicsModel(model_net2, buffer, model_loss_fnc, model_opt2, env, type='diff')
+dynamics1 = DynamicsModel(model_net1, buffer, model_loss_fnc, model_opt1, env, model_type='diff')
+dynamics2 = DynamicsModel(model_net2, buffer, model_loss_fnc, model_opt2, env, model_type='diff')
 dynamics = [dynamics1, dynamics2]
 
 policy_net = SequentialNetwork(network_layers['policy_layers'])

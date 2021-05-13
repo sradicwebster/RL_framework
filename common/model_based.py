@@ -4,13 +4,13 @@ from RL_framework.common.buffer import ProcessMinibatch
 
 
 class DynamicsModel:
-    def __init__(self, model, buffer, loss_func, opt, env, type='diff'):
+    def __init__(self, model, buffer, loss_func, opt, env, model_type='diff'):
         self.model = model
         self.buffer = buffer
         self.loss_func = loss_func
         self.opt = opt
         self.env = env
-        self.type = type
+        self.type = model_type
 
     def train_model(self, epochs, minibatch_size, standardise=False, noise_std=None):
 

@@ -60,7 +60,7 @@ buffer = ReplayMemory(params['buffer_size'])
 
 model_net = SequentialNetwork(network_layers['model_layers'])
 model_opt = optim.Adam(model_net.parameters(), lr=learning_rates['model_lr'])
-dynamics = DynamicsModel(model_net, buffer, model_loss_fnc, model_opt, env, type='diff')
+dynamics = DynamicsModel(model_net, buffer, model_loss_fnc, model_opt, env, model_type='diff')
 
 policy_net = SequentialNetwork(network_layers['policy_layers'])
 value_net = QnetContinuousActions(env)
