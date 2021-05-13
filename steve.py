@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.distributions import normal
 import wandb
 from tqdm import tqdm
 from RL_framework.common.networks import SequentialNetwork, QnetContinuousActions, ValueFunction, PolicyFunction
 from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
 from RL_framework.common.gymenv import GymEnv
 from RL_framework.common.model_based import DynamicsModel
+
 
 # Environment details
 # ~~~~~~~~~~~~~~~~~~~
@@ -17,17 +17,18 @@ env = GymEnv('Pendulum-v0')
 # ~~~~~~~~~~~~~~~
 wandb.init(project='framework_pendulum')
 wandb.config.algorithm = 'STEVE'
-num_episodes = 100
+num_episodes = 200
 gamma = 0.99
 params = {'sample_collection': 1,
           'buffer_size': 5000,
-          'minibatch_size': 64,
-          'training_epoch': 5,
-          'imagination_steps': 5
+          'minibatch_size': 32,
+          'training_epoch': 2,
+          'imagination_steps': 1
           }
-action_noise = normal.Normal(0, 0.05)
+epsilon = 0.05
 wandb.config.gamma = gamma
 wandb.config.update(params)
+wandb.config.epsilon = epsilon
 
 # Networks details
 # ~~~~~~~~~~~~~~~~
@@ -47,8 +48,8 @@ network_layers = {'model_layers': [nn.Linear(env.obs_size + env.action_size, 32)
                   }
 learning_rates = dict(model_lr=1e-3, policy_lr=5e-4, value_lr=1e-3)
 model_loss_fnc = torch.nn.MSELoss()
-critic_loss_fnc = torch.nn.SmoothL1Loss()
-tau = 0.001
+critic_loss_fnc = torch.nn.MSELoss()
+tau = 0.005
 wandb.config.update(network_layers)
 wandb.config.update(learning_rates)
 wandb.config.tau = tau
@@ -56,18 +57,17 @@ wandb.config.tau = tau
 # Initialisation
 # ~~~~~~~~~~~~~~
 buffer = ReplayMemory(params['buffer_size'])
-
 model_net1 = SequentialNetwork(network_layers['model_layers'])
 model_net2 = SequentialNetwork(network_layers['model_layers'])
 model_opt1 = optim.Adam(model_net1.parameters(), lr=learning_rates['model_lr'])
 model_opt2 = optim.Adam(model_net2.parameters(), lr=learning_rates['model_lr'])
-dynamics1 = DynamicsModel(model_net1, buffer, model_loss_fnc, model_opt1, env, gamma)
-dynamics2 = DynamicsModel(model_net2, buffer, model_loss_fnc, model_opt2, env, gamma)
+dynamics1 = DynamicsModel(model_net1, buffer, model_loss_fnc, model_opt1, env, type='diff')
+dynamics2 = DynamicsModel(model_net2, buffer, model_loss_fnc, model_opt2, env, type='diff')
 dynamics = [dynamics1, dynamics2]
 
 policy_net = SequentialNetwork(network_layers['policy_layers'])
-value_net1 = QnetContinuousActions(env.obs_size, env.action_size)
-value_net2 = QnetContinuousActions(env.obs_size, env.action_size)
+value_net1 = QnetContinuousActions(env)
+value_net2 = QnetContinuousActions(env)
 policy_opt = optim.Adam(policy_net.parameters(), lr=learning_rates['policy_lr'])
 value_opt1 = optim.Adam(value_net1.parameters(), lr=learning_rates['value_lr'], weight_decay=1e-2)
 value_opt2 = optim.Adam(value_net2.parameters(), lr=learning_rates['value_lr'], weight_decay=1e-2)
@@ -78,37 +78,44 @@ critics = [critic1, critic2]
 
 # Gather data and training
 # ~~~~~~~~~~~~~~~~~~~~~~~~
-dynamics1.populate_buffer_randomly(0.1)
+global_step = buffer.populate_randomly(env, 0.1)
+for dynamic in dynamics:
+    dynamic.train_model(20, params['minibatch_size'], noise_std=0.001)
 
-episode_rewards = []
 for episode in tqdm(range(num_episodes)):
     episode_reward = 0
-    step = 0
+    episode_step = 0
     state = env.env.reset()
     terminal = False
     while terminal is False:
-        action = actor.get_policy(state)
-        action = [torch.clamp(action[i] + action_noise.sample(), env.action_low[i], env.action_high[i]).item()
-                  for i in range(env.action_size)]
-        next_state, reward, terminal, _ = env.env.step(action)
-        step += 1
+        with torch.no_grad():
+            action = actor.get_policy(state)
+            if torch.rand(1) < epsilon:
+                action = torch.clamp(torch.normal(action, torch.Tensor([0.1])), -1, 1)
+        action_scaled = (env.action_low + (env.action_high - env.action_low) * (action + 1) / 2).numpy()
+        next_state, reward, terminal, _ = env.env.step(action_scaled)
+        wandb.log({'reward': reward, 'step': global_step, 'episode': episode})
+        episode_reward += reward
+        episode_step += 1
+        global_step += 1
         buffer.add(state, action, reward, next_state, terminal, None, None)
         state = next_state
-        episode_reward += reward
 
-        if (step % params['sample_collection'] == 0 or terminal is True) and len(buffer) >= params['minibatch_size']:
+        if (episode_step % params['sample_collection'] == 0 or terminal is True) and \
+                len(buffer) >= params['minibatch_size']:
+
             # Train dynamics model
             # ~~~~~~~~~~~~~~~~~~~~
             for dynamic in dynamics:
-                dynamic.train_model(params['training_epoch'], params['minibatch_size'])
+                dynamic.train_model(params['training_epoch'], params['minibatch_size'], noise_std=0.001)
 
-            # Update policy network
-            # ~~~~~~~~~~~~~~~~~~~~~
             minibatch = buffer.random_sample(params['minibatch_size'])
             t = ProcessMinibatch(minibatch)
 
-            actor_loss = critics[0].net(t.states, actor.net(t.states)).mean()
-            wandb.log({"policy_loss": actor_loss}, commit=False)
+            # Update policy network
+            # ~~~~~~~~~~~~~~~~~~~~~
+            actor_loss = critics[torch.randint(2, (1,)).item()].net(t.states, actor.net(t.states)).mean()
+            wandb.log({"policy_loss": actor_loss, 'step': global_step, 'episode': episode}, commit=False)
             actor.optimise(-actor_loss)
 
             # Update critic networks
@@ -126,11 +133,16 @@ for episode in tqdm(range(num_episodes)):
                     for h in range(1, params['imagination_steps']+1):
 
                         imagine_action = actor.target_net(imagine_state)
-                        reward = [env.reward_func(imagine_state[i].squeeze().numpy(), imagine_action[i].squeeze()
-                                                  .numpy()) for i in range(len(imagine_action))]
+                        imagine_action_scaled = env.action_low + (env.action_high - env.action_low) * (imagine_action
+                                                                                                       + 1) / 2
+                        reward = [env.reward_func(imagine_state[i].squeeze().numpy(), imagine_action_scaled[i].squeeze()
+                                                  .numpy()) for i in range(len(imagine_action_scaled))]
                         dis_reward += gamma ** h * torch.Tensor(reward).reshape(-1, 1)
 
-                        imagine_next_state = dynamic.model(torch.cat((imagine_state, imagine_action), dim=1))
+                        imagine_next_state = imagine_state + dynamic.model(torch.cat((imagine_state, imagine_action),
+                                                                                     dim=1))
+                        imagine_next_state = torch.stack([torch.clamp(imagine_next_state[:, i], env.obs_low[i],
+                                                                      env.obs_high[i]) for i in range(env.obs_size)]).T
 
                         for c, critic in enumerate(critics):
                             target = dis_reward + gamma ** (h+1) \
@@ -139,8 +151,10 @@ for episode in tqdm(range(num_episodes)):
 
                         imagine_state = imagine_next_state
 
-            rollout_var = targets.var(dim=(2, 3))
-            normalised_weights = rollout_var / rollout_var.sum(dim=1, keepdims=True)
+            inverse_var = 1 / (targets.var(dim=(2, 3)) + 1e-10)
+            normalised_weights = inverse_var / inverse_var.sum(dim=1, keepdims=True)
+            model_usage = normalised_weights[:, 0].mean()
+            # wandb.log({"model_usage": model_usage, 'step': global_step, 'episode': episode}, commit=False)
             target = (targets.mean(dim=(2, 3)) * normalised_weights).sum(dim=1, keepdims=True)
 
             critic_losses = []
@@ -150,9 +164,9 @@ for episode in tqdm(range(num_episodes)):
                 critic_losses.append(critic_loss)
                 critic.optimise(critic_loss)
                 critic.soft_target_update()
-            wandb.log({"value_loss": torch.mean(torch.stack(critic_losses))}, commit=False)
+            wandb.log({"value_loss": torch.stack(critic_losses).mean(), 'step': global_step, 'episode': episode},
+                      commit=False)
 
             actor.soft_target_update()
 
-    wandb.log({"reward": episode_reward})
-    episode_rewards.append(episode_reward)
+    wandb.log({"episode_reward": episode_reward, "episode": episode})

@@ -1,6 +1,7 @@
 from collections import namedtuple
 import random
 import torch
+import wandb
 
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'terminal', 'episode_step',
@@ -42,6 +43,27 @@ class ReplayMemory:
     def empty(self):
         self.memory = []
         self.position = 0
+
+    def populate_randomly(self, env, fraction, step=0):
+        while self.__len__() < int(fraction * self.capacity):
+            state = env.env.reset()
+            terminal = False
+            while terminal is False:
+                if str(env.env.action_space)[:8] == 'Discrete':
+                    action = torch.randint(env.action_size, size=(1,)).numpy()
+                    next_state, reward, terminal, _ = env.env.step(action)
+                elif str(env.env.action_space)[:3] == 'Box':
+                    action = torch.rand(env.action_size)
+                    action_scaled = env.action_low + (env.action_high - env.action_low) * action
+                    next_state, reward, terminal, _ = env.env.step(action_scaled)
+                    action = (action - 0.5) * 2  # action in [-1, 1]
+                else:
+                    print('Action space not implemented')
+
+                step += 1
+                self.add(state, action, reward, next_state, terminal, None, None)
+                state = next_state
+        return step
 
 
 class ProcessMinibatch:
