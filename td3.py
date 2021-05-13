@@ -63,10 +63,9 @@ for episode in tqdm(range(num_episodes)):
     terminal = False
     while terminal is False:
         with torch.no_grad():
-            action = actor.get_policy(state)
-        action = torch.stack([torch.clamp(action[i] + action_noise.sample(), env.action_low[i], env.action_high[i])
-                              for i in range(env.action_size)]).numpy()
-        next_state, reward, terminal, _ = env.env.step(action)
+            action = torch.clamp(actor.get_policy(state) + action_noise.sample(env.action_high.shape), -1, 1)
+        action_scaled = (env.action_low + (env.action_high - env.action_low) * (action + 1) / 2).numpy()
+        next_state, reward, terminal, _ = env.env.step(action_scaled)
         wandb.log({'reward': reward, 'step': global_step, 'episode': episode})
         episode_reward += reward
         episode_step += 1

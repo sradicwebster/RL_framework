@@ -51,7 +51,7 @@ class DeterministicPolicy(nn.Module):
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         x = torch.tanh(self.fc4(x))
-        return self.action_high * x  # will only work for action_low = -action_high
+        return x
 
 
 class QnetContinuousActions(nn.Module):
