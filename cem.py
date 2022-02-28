@@ -16,16 +16,16 @@ env = GymEnv('Pendulum-v0')
 # ~~~~~~~~~~~~~~~
 wandb.init(project='framework_pendulum')
 wandb.config.algorithm = 'CEM'
-num_episodes = 50
+num_episodes = 10
 gamma = 0.9
 params = {'sample_collection': 1,
           'buffer_size': 5000,
           'minibatch_size': 32,
-          'training_epoch': 5,
+          'training_epoch': 1,
           'control_horizon': 20,
           'K_actions_sample': 50,
           'Best_K': 10,
-          'grad': True
+          'grad': False
           }
 wandb.config.gamma = gamma
 wandb.config.update(params)
@@ -76,7 +76,7 @@ for episode in tqdm(range(num_episodes)):
     terminal = False
     while terminal is False:
         action = MPC.cem_planning(state, params['K_actions_sample'], params['control_horizon'], params['Best_K'],
-                                  episode_step, keep_best_k=True, grad=params['grad'])
+                                  episode_step, keep_best_k=False, alpha=0, grad=params['grad'])
         action_scaled = (env.action_low + (env.action_high - env.action_low) * (action + 1) / 2).numpy()
         next_state, reward, terminal, _ = env.env.step(action_scaled)
         wandb.log({'reward': reward, 'step': global_step, 'episode': episode})

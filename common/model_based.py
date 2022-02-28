@@ -1,6 +1,7 @@
 import torch
 from torch.distributions.normal import Normal
 import torch.optim as optim
+from torch.nn.utils import clip_grad_norm_
 import wandb
 from RL_framework.common.buffer import ProcessMinibatch
 
@@ -16,7 +17,7 @@ class DynamicsModel:
         self.reward = reward
         self.rew_opt = rew_opt
 
-    def train_model(self, epochs, minibatch_size, standardise=False, noise_std=None):
+    def train_model(self, epochs, minibatch_size, grad_steps=1, standardise=False, noise_std=None):
 
         for i in range(epochs):
             minibatch = self.buffer.random_sample(minibatch_size)
@@ -35,13 +36,13 @@ class DynamicsModel:
                 t.states += torch.normal(0, noise_std, size=t.states.shape)
                 t.actions += torch.normal(0, noise_std, size=t.actions.shape)
 
-            current = self.model(torch.cat((t.states, t.actions), dim=1))
-
-            loss = self.loss_func(current, target)
-            wandb.log({"model_loss": loss}, commit=False)
-            self.opt.zero_grad()
-            loss.backward()
-            self.opt.step()
+            for _ in range(grad_steps):
+                current = self.model(torch.cat((t.states, t.actions), dim=1))
+                loss = self.loss_func(current, target)
+                wandb.log({"model_loss": loss}, commit=False)
+                self.opt.zero_grad()
+                loss.backward()
+                self.opt.step()
 
     def train_reward_fnc(self, epochs, minibatch_size):
 
@@ -93,7 +94,7 @@ class MPC:
         return samples[best_k, 0].item()
 
     def cem_planning(self, state, k, horizon, best_k, episode_step, keep_best_k=False, cem_iters=10, alpha=0.6,
-                     normalise_state=False, grad=False, grad_iters=5):
+                     normalise_state=False, grad=False, grad_iters=5, grad_clip=True):
 
         if episode_step == 0:
             mu = torch.zeros(horizon, self.env.action_size)
@@ -109,18 +110,20 @@ class MPC:
                 samples = torch.clamp(action_dis.sample((k,)), -1, 1)
 
             if grad is True:
-                samples.requires_grad_()
+                samples = samples.requires_grad_()
                 action_opt = optim.Adam([samples], lr=0.05)
                 for _ in range(grad_iters):
                     action_opt.zero_grad()
                     rewards = self._rollout(state, samples, normalise_state, grad=grad).sum()
                     (-rewards).backward()
+                    if grad_clip is True:
+                        clip_grad_norm_(samples.grad.data, max_norm=1, norm_type=2)
                     action_opt.step()
                 samples = samples.detach()
 
             rewards = self._rollout(state, samples, normalise_state, grad=False)
-            best_samples = samples[rewards.sort(descending=True).indices[:best_k]]
-            mu_elite, sigma_elite = torch.std_mean(best_samples, dim=0)
+            best_samples = samples[rewards.topk(best_k, sorted=False).indices]
+            mu_elite, sigma_elite = torch.std_mean(best_samples, dim=0, unbiased=False)
             mu = alpha * mu + (1 - alpha) * mu_elite
             sigma = alpha * sigma + (1 - alpha) * sigma_elite
         self.action_sequence = mu
