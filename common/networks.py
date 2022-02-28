@@ -74,9 +74,9 @@ class GaussianPolicy(nn.Module):
         super().__init__()
         self.env = env
         self.net = SequentialNetwork([nn.Linear(env.obs_size, 32),
-                                     nn.ReLU(),
-                                     nn.Linear(32, 64),
-                                     nn.Identity()])
+                                      nn.ReLU(),
+                                      nn.Linear(32, 64),
+                                      nn.Identity()])
         self.mu_layer = nn.Linear(64, env.action_size)
         self.log_std_layer = nn.Linear(64, env.action_size)
 
@@ -106,12 +106,13 @@ class DynamicsNetTermination(nn.Module):
         next_state = self.state_output(x)
         terminal = self.soft(self.terminal(x))
         return next_state, terminal
+
     # terminals = torch.argmax(terminal, dim=1).reshape(-1, 1)
 
     def model_loss_fnc(self, current, target, env):
-         mse = torch.nn.MSELoss()(current[:, :env.obs_size], target[:, :env.obs_size])
-         bce = torch.nn.BCEWithLogitsLoss()(current[:, -1], target[:, -1])
-         return mse + bce
+        mse = torch.nn.MSELoss()(current[:, :env.obs_size], target[:, :env.obs_size])
+        bce = torch.nn.BCEWithLogitsLoss()(current[:, -1], target[:, -1])
+        return mse + bce
 
 
 class CommonFunctions:

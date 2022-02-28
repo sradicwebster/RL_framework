@@ -2,7 +2,8 @@ from tqdm import tqdm
 import wandb
 import torch
 import torch.optim as optim
-from RL_framework.common.networks import QnetContinuousActions, GaussianPolicy, ValueFunction, SACPolicy
+from RL_framework.common.networks import QnetContinuousActions, GaussianPolicy, ValueFunction,\
+    SACPolicy
 from RL_framework.common.buffer import ReplayMemory, ProcessMinibatch
 from RL_framework.common.gymenv import GymEnv
 
@@ -19,7 +20,7 @@ num_episodes = 200
 gamma = 0.99
 alpha = 0.1  # fixed entropy regularization coefficient
 params = {'sample_collection': 1,
-          'buffer_size': 5000,
+          'buffer_size': 10000,
           'minibatch_size': 32}
 
 wandb.config.gamma = gamma
@@ -78,24 +79,26 @@ for episode in tqdm(range(num_episodes)):
             with torch.no_grad():
                 target_action, target_action_log = actor.action_selection(t.next_states)
                 target_Q = torch.min(critic1.target_net(t.next_states, target_action),
-                                     critic2.target_net(t.next_states, target_action)) - alpha * target_action_log
+                                     critic2.target_net(t.next_states, target_action)) \
+                           - alpha * target_action_log
             target = t.rewards + gamma * (1 - t.terminals) * target_Q
             current_v1 = critic1.net(t.states, t.actions)
             current_v2 = critic2.net(t.states, t.actions)
             critic_loss1 = critic_loss_fnc(target, current_v1)
             critic_loss2 = critic_loss_fnc(target, current_v2)
-            wandb.log({"value_loss": (critic_loss1+critic_loss2)/2, 'step': global_step, 'episode': episode},
-                      commit=False)
+            wandb.log({"value_loss": (critic_loss1+critic_loss2)/2, 'step': global_step,
+                       'episode': episode}, commit=False)
             critic1.optimise(critic_loss1)
             critic2.optimise(critic_loss2)
             critic1.soft_target_update()
             critic2.soft_target_update()
 
             policy_action, policy_action_log = actor.action_selection(t.states)
-            with torch.no_grad():
-                Q_min = torch.min(critic1.net(t.states, policy_action), critic2.net(t.states, policy_action))
+            Q_min = torch.min(critic1.net(t.states, policy_action),
+                              critic2.net(t.states, policy_action))
             actor_loss = (Q_min - alpha * policy_action_log).mean()
-            wandb.log({"policy_loss": actor_loss,  'step': global_step, 'episode': episode}, commit=False)
+            wandb.log({"policy_loss": actor_loss,  'step': global_step, 'episode': episode},
+                      commit=False)
             actor.optimise(-actor_loss)
 
     wandb.log({"episode_reward": episode_reward, "episode": episode})
